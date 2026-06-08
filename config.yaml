@@ -1,0 +1,242 @@
+# =============================================================================
+# DataEvolver — Configuration
+# =============================================================================
+# Industrial-grade asynchronous multi-stage data curation pipeline for
+# text-rich image datasets.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+  images_crawled: "/path/to/crawled/images"      # Raw downloaded images
+  images_generated: "/path/to/generated/images"  # T2I generated images
+  ann_dir: "/path/to/annotations"                # Failure case logs
+  log_dir: "/path/to/logs"                       # Pipeline logs
+  accepted_dir: "/path/to/accepted"              # Final accepted dataset
+  gen_dir: "/path/to/generated/raw"              # Raw generated images
+  gen_accepted_dir: "/path/to/gen/accepted/images"      # Post-filtered generated images
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+dataset_num: 1000000
+
+filenames:
+  strategy: seq                       # "seq" | "uuid" | "hash"
+
+split:
+  train_ratio: 0.99
+
+# ---------------------------------------------------------------------------
+# Generation phase toggle
+# ---------------------------------------------------------------------------
+generation:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# LLM & Agents
+# ---------------------------------------------------------------------------
+llm:
+  model: "mistral:latest"             # main LLM for Retriever / QueryGenerator / CountAnalyse / QueryPlannerAgent
+  cir_model: "qwen3.5:4b"             # critic LLM for PromptPlanner / SemanticAdvantageAgent / StrategyPlannerAgent / ExperienceLibrarianAgent
+
+critic:
+  enabled: true
+  strategy:
+    enabled: true                     # enable LLM-based query optimization
+    queries_enabled: true             # independently enable strategy query generation
+    warmup_rounds: 3                  # use legacy queries for the first N rounds
+    history_limit: 50                 # keep last N pass-rate / diagnostic points
+  experience:
+    use_agent: true                   # True → ExperienceLibrarianAgent; False → hardcoded maintainer
+    semantic_window: 2                # sliding window of semantic advantages retained
+    top_k: 10                         # max top-performing queries kept in experience library
+    prompt_window: 2                  # history window size for Agent prompts
+    fallback_mode: "hardcoded"        # "merge" | "keep" | "hardcoded"
+
+rejection_vector:
+  enabled: true
+  round_size: 1000
+
+# ---------------------------------------------------------------------------
+# Pipeline concurrency & flow control
+# ---------------------------------------------------------------------------
+concurrency:
+  enable_async: true
+  dry_run: false
+  query_workers: 64
+  quality_workers: 46
+  semantic_workers: 24
+  batch_write_size: 50
+  max_queue_sizes:
+    queries: 50000
+    downloaded: 30000
+    ocr: 85000
+    quality: 80000
+    semantic: 1000000
+  rate_limits:
+    query_qps: 5                      # throttle query requests when receiving HTTP 429
+
+dynamic_query:
+  enabled: true
+  low_watermark: 30                   # refill queries queue when size drops below this
+  monitor_batch_size: 3               # subtopics to process per monitoring batch
+  monitor_queries_per_subtopic: 15    # max queries per subtopic per monitoring cycle
+  max_wait_sec: 180                   # max seconds with no queue growth before fallback (0 = off)
+  max_empty_cycles: 20                # max consecutive empty-growth cycles before fallback (0 = off)
+  fallback_strategy: "warmup"         # "static" | "warmup"
+
+feedback_query:
+  enabled: true
+  min_samples: 20                     # min samples before triggering feedback
+  stagnation_samples: 10              # stagnation threshold (samples)
+  acc_rate_low: 0.15                  # low acceptance rate threshold
+  quality_reject_high: 0.50           # high quality rejection rate threshold
+  semantic_reject_high: 0.40          # high semantic rejection rate threshold
+  max_opt_per_query: 1                # max optimizations per query
+  max_opt_per_subtopic: 5             # max optimized queries per subtopic
+  initial_warmup_subtopics: 10        # subtopics preloaded during initial warmup
+  max_llm_calls_per_loop: 10          # max critic subtopic additions per round
+
+metrics:
+  log_interval_sec: 30                # periodic snapshot interval (0 = off)
+  print_every_batch: true             # print summary on each batch flush
+  enable_queue_sizes: true            # include per-stage queue lengths in snapshot
+  enable_memory: false                # include RSS / GPU memory in snapshot
+
+# ---------------------------------------------------------------------------
+# Search (Bing)
+# ---------------------------------------------------------------------------
+bing:
+  per_subtopic_images: 1500
+
+# ---------------------------------------------------------------------------
+# OCR
+# ---------------------------------------------------------------------------
+ocr:
+  use_multi_gpu: true
+  use_multiprocess: true
+  max_instances: 8
+  instances_per_gpu: 1
+  max_workers: 8
+  max_pending: 8000
+  engine: "paddle"
+  lang: "ch"
+  use_angle_cls: true
+  use_gpu: true
+  show_log: false
+  device_id: 0                        # single-GPU fallback device
+  min_words: 4                        # minimum OCR word count for quality checks
+  min_free_gb: 2.0                    # skip GPUs with less free VRAM
+
+# ---------------------------------------------------------------------------
+# Quality assessment
+# ---------------------------------------------------------------------------
+quality:
+  min_ocr_coverage: 0.25
+  min_legibility: 0.5
+  min_sharpness: 50
+  min_char_h_px: 10
+  max_char_h_cv: 0.75
+  max_line_angle_std: 60
+  min_centrality: 0.15
+  max_border_ratio: 0.30
+  min_text_density: 23
+  max_clutter: 0.18
+  min_contrast: 0.07
+  min_char_density: 3
+  min_side: 384                       # minimum short-side pixels
+  max_side: 4096                      # maximum long-side pixels
+  min_ar: 0.35                        # minimum aspect ratio (width / height)
+  max_ar: 3.0                         # maximum aspect ratio (width / height)
+  allow_languages: ["en", "zh", "zh-cn", "zh-tw", "ja", "ko", "de", "fr", "es", "ru", "it"]
+  lang_policy: "prefer"               # "prefer" | "require"
+
+watermark:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Semantic relevance (CLIP)
+# ---------------------------------------------------------------------------
+semantic:
+  enabled: true
+  model_name: "openai/clip-vit-base-patch32"
+  thresholds:
+    min_similarity: 0.5
+    min_topic_similarity: 0.55
+    min_subtopic_similarity: 0.57
+    min_combined_similarity: 0.55
+    min_prompt_similarity: 0.55
+  device: "cuda"
+  verbose: true
+
+# ---------------------------------------------------------------------------
+# Text consistency (sentence-transformers)
+# ---------------------------------------------------------------------------
+text_consistency:
+  enabled: true
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  top_k_ocr: 10
+  min_topic_similarity: 0.2
+  min_subtopic_similarity: 0.23
+  min_combined_similarity: 0.2
+
+# ---------------------------------------------------------------------------
+# pHash-based cross-image deduplication
+# ---------------------------------------------------------------------------
+hash_deduplication:
+  enabled: true
+  max_distance: 3                     # Hamming distance threshold
+  scope: "global"                     # "global" | "topic"
+  verbose: false
+  auto_flush: false
+  index_path: "/path/to/accepted/hash_index.json"
+
+# ---------------------------------------------------------------------------
+# Qwen image generation (T2I)
+# ---------------------------------------------------------------------------
+qwen:
+  true_cfg_scale: 4.5
+  num_inference_steps: 25
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Vision-language annotation (Qwen2.5-VL)
+# ---------------------------------------------------------------------------
+annotation:
+  qwen_vl:
+    enabled: true
+    model: "qwen3-vl:latest"
+    verbose: false
+
+# ---------------------------------------------------------------------------
+# Topics & seed queries, For reference only, please add content according to your own needs.
+# ---------------------------------------------------------------------------
+topics:
+  - name: Store_Signs_and_Shopfronts
+    seed_queries: ["商店招牌 门头广告牌", "餐饮店招牌 美食街门头", "商业街店铺招牌 牌匾", "便利店招牌 连锁店标识", "药店招牌 医院标识牌", "store signboard shop front", "restaurant sign food street sign", "commercial street shop sign", "retail store signage brand logo", "Chinese shop plaque traditional signage", "cafe signboard coffee shop sign", "Japanese store sign kanji", "Korean shop signboard Hangul"]
+  - name: Digital_Signage
+    seed_queries: ["LED广告屏 户外电子屏广告", "商场电子导购屏 数字标牌", "电梯广告屏 楼宇数字媒体", "地铁站内电子屏 动态广告", "公交站电子站牌 LED信息屏", "digital signage LED display advertising", "shopping mall digital screen", "elevator advertising screen digital", "subway platform digital display", "electronic billboard scrolling text", "retail digital menu board", "airport flight information display FIDS", "stock ticker LED display text"]
+  - name: Posters_and_Bulletin_Boards
+    seed_queries: ["电影海报 上映信息 演职人员表", "活动海报 促销海报 展会海报", "社区公告栏 通知公告", "校园海报 社团活动海报", "招聘海报 求职信息栏", "movie poster title credits text", "event poster promotional text", "community bulletin board notice", "campus poster student activity", "concert poster band name tour dates", "propaganda poster retro text design", "Japanese movie poster text", "Russian propaganda poster typography"]
+  - name: Book_Covers
+    seed_queries: ["图书封面 书名 作者 出版社", "畅销书封面 书籍封面设计", "文学书籍封面 小说封面", "教材封面 教科书封面", "儿童绘本封面 图书封面排版", "book cover title author text", "novel cover book jacket design", "textbook cover educational book", "bestseller cover book design", "book cover typography design", "book spine text library shelf", "German book cover typography", "French novel cover design text"]
+  - name: Magazine_Covers_and_Pages
+    seed_queries: ["杂志封面 刊名 封面标题 要目", "时尚杂志封面 人物封面", "新闻杂志封面 周刊封面", "学术期刊封面 学报封面", "杂志内页 图文排版 栏目页", "magazine cover masthead cover lines", "fashion magazine cover Vogue", "news magazine cover TIME", "magazine spread layout text design", "magazine contents page table of contents", "magazine article page text layout", "Japanese magazine cover layout", "Italian fashion magazine cover text"]
+  - name: Newspapers
+    seed_queries: ["报纸头版 报头 头条标题", "中文报纸 人民日报 地方报纸", "报纸版面 多栏排版 新闻标题", "报纸分类广告 豆腐块广告", "报纸副刊 文艺版 体育版", "newspaper front page masthead headline", "broadsheet newspaper layout text", "tabloid newspaper cover page", "newspaper classified ads section", "newspaper spread multi-column layout", "financial newspaper Wall Street Journal", "UK newspaper front page Guardian", "Le Monde French newspaper front page"]
+  - name: Textbooks_and_Academic_Papers
+    seed_queries: ["教材内页 课文 练习 插图说明", "数学教材 公式 图表 证明过程", "学术论文 标题 摘要 参考文献", "学术期刊内页 双栏排版", "英文教材 English textbook page", "textbook page lesson text illustration", "academic paper title abstract references", "math textbook formula equation diagram", "scientific paper two-column layout", "journal article page figure caption", "thesis page academic writing", "STEM textbook page formula chart", "medical textbook page anatomy diagram text"]
+  - name: Ancient_Books_and_Handwritten_Documents
+    seed_queries: ["古籍书页 线装书 竖排繁体", "古代文献 刻本 雕版印刷", "手写笔记 课堂笔记 会议记录", "手写信件 书信 便签", "历史档案 手写文献 档案扫描件", "ancient book page classical Chinese text", "woodblock printed book traditional binding", "handwritten notes notebook page", "manuscript page historical document", "calligraphy work handwritten text", "old handwritten letter cursive", "Arabic manuscript page calligraphy", "Latin manuscript medieval text"]
+  - name: Product_Packaging
+    seed_queries: ["食品包装 营养成分表 配料表", "饮料包装 标签 品牌名 生产信息", "药品包装 说明书 药品名称", "化妆品包装 成分说明 使用说明", "电子产品包装 规格参数 型号", "product label nutrition facts", "beverage bottle label text", "medicine packaging drug information", "cosmetic box ingredient list", "electronics packaging spec sheet", "cereal box packaging text", "Japanese food packaging label", "European product packaging multilingual"]
+  - name: Menus_and_Price_Lists
+    seed_queries: ["餐厅菜单 菜名 价格 菜品介绍", "咖啡厅菜单 饮品价目表", "快餐店菜单板 套餐信息", "外卖菜单 图文菜单 促销信息", "酒水单 价目表", "restaurant menu food items prices", "cafe menu coffee drinks board", "fast food menu board combo meals", "takeout menu item descriptions", "wine list menu prices", "dim sum menu Chinese restaurant", "French bistro menu prix fixe", "Japanese izakaya menu kanji"]
+  - name: Forms_and_Receipts
+    seed_queries: ["购物小票 收据 消费明细", "发票 增值税发票 发票信息", "银行单据 汇款单 取款单", "表格 申请表 登记表", "调查问卷 答题卡", "receipt grocery store item list", "invoice VAT invoice billing information", "bank slip deposit withdrawal form", "application form personal information", "tax form government document", "medical prescription form doctor", "Japanese receipt konbini", "German invoice Rechnung"]
+  - name: Presentation_Slides_and_Infographics
+    seed_queries: ["PPT幻灯片 标题 要点 图表说明", "企业宣传PPT 产品介绍页", "教学课件 知识点总结页", "信息图 infographic 数据可视化", "学术海报 会议展板", "presentation slide title bullet points", "business PPT product introduction slide", "educational slide teaching material", "infographic data visualization text", "conference poster academic poster", "pitch deck startup presentation slide", "slide deck design typography", "corporate presentation slide template"]
+  - name: Web_Screenshots_and_Ebooks
+    seed_queries: ["网页截图 新闻网站 博客文章", "电商页面 商品详情页 用户评价", "社交媒体页面 推文截图", "电子书页面 Kindle阅读页面", "PDF文档页面 扫描版PDF", "website screenshot news article page", "e-commerce product page description", "social media post screenshot Twitter", "e-book page Kindle text layout", "PDF document page scanned document", "blog post webpage text", "Wikipedia article page screenshot", "online newspaper digital edition"]

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 async def enqueue_all_queries(pipeline: OrchestratorPipeline) -> None:
     """Enqueue a subset of subtopics before dynamic feedback takes over."""
     critic_strategy = (pipeline.cfg.get("critic", {}) or {}).get("strategy", {}) or {}
-    warmup_rounds = int(critic_strategy.get("warmup_rounds", 5) or 5)
+    warmup_rounds = int(critic_strategy.get("warmup_rounds", 3) or 3)
     fb_cfg = pipeline.cfg.get("feedback_query", {}) or {}
     initial_limit = int(fb_cfg.get("initial_warmup_subtopics", 3) or 3)
     if pipeline._limit_subtopics:

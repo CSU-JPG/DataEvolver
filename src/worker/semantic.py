@@ -1,4 +1,4 @@
-"""Performs pHash dedup, checks semantic relevance, text consistency, generates captions, and buffers accepted items."""
+"""Checks semantic relevance, text consistency, generates captions, and buffers accepted items."""
 
 from __future__ import annotations
 
@@ -15,41 +15,14 @@ if TYPE_CHECKING:
 
 
 async def semantic_worker(pipeline: OrchestratorPipeline, idx: int) -> None:
-    """Perform pHash dedup, semantic and text-consistency checks, generate captions, and buffer accepted items."""
+    """Perform semantic and text-consistency checks, generate captions, and buffer accepted items."""
     while True:
         meta = await pipeline.semantic_queue.get()
         if meta is pipeline._sentinel:
             pipeline.semantic_queue.task_done()
             break
         fp: Path = meta["path"]
-
-        # --- pHash deduplication (moved here from quality_worker) ---
         key = meta["topic"] if pipeline._dedup_scope == "topic" else ""
-        try:
-            async with pipeline.dedup_lock:
-                is_dup, _ = pipeline.dedup.check_and_add(str(fp), key)
-            if is_dup:
-                pipeline._record_sample_outcome(meta, ["dedup_duplicate"])
-                pipeline.loop_totals["rejected"] += 1
-                pipeline.loop_totals["pHash_rejected"] += 1
-                if not pipeline.keep_rejects:
-                    fp.unlink(missing_ok=True)
-                pipeline.semantic_queue.task_done()
-                continue
-        except Exception as e:
-            pipeline.loop_totals["dedup_error"] += 1
-            pipeline.loop_totals["rejected"] += 1
-            pipeline._record_sample_outcome(meta, ["dedup_error"])
-            if not pipeline.keep_rejects:
-                fp.unlink(missing_ok=True)
-            try:
-                pipeline.dedup.discard_path(str(fp), key)
-            except Exception:
-                pass
-            pipeline.semantic_queue.task_done()
-            print(f"[DedupError-semantic] {fp .name } {e }")
-            continue
-        # --- end pHash deduplication ---
 
         sem_res = {}
         try:

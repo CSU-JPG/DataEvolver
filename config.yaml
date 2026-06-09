@@ -70,11 +70,11 @@ concurrency:
   semantic_workers: 24
   batch_write_size: 50
   max_queue_sizes:
-    queries: 50000
-    downloaded: 30000
-    ocr: 85000
-    quality: 80000
-    semantic: 1000000
+    queries: 500
+    downloaded: 300
+    ocr: 850
+    quality: 800
+    semantic: 1000
   rate_limits:
     query_qps: 5                      # throttle query requests when receiving HTTP 429
 
@@ -109,7 +109,27 @@ metrics:
 # Search (Bing)
 # ---------------------------------------------------------------------------
 bing:
-  per_subtopic_images: 1500
+  per_subtopic_images: 1500          # max images to fetch per subtopic
+
+  step: 57                           # images per Bing async page
+  max_concurrent_pages: 3            # concurrent Bing page requests in flight
+  max_empty_pages: 4                 # consecutive empty pages before stopping
+  per_page_timeout: 12.0             # HTTP timeout (seconds) per page fetch
+  retry_per_page: 3                  # max retries per page on transient errors
+  max_warmup_retries: 2              # max session-level warmup retries
+
+  mkt: "auto"                        # "auto" | "en-US" | "zh-CN" | "ja-JP" | "ko-KR" | ...
+                                     # "auto" detects from query Unicode content
+  safesearch: "moderate"             # "off" | "moderate" | "strict"
+
+  download_concurrency_initial: 24   # starting download concurrency
+  download_concurrency_min: 8        # floor for adaptive download concurrency
+  download_concurrency_max: 48       # ceiling for adaptive download concurrency
+  per_host_limit: 4                  # max concurrent downloads per host
+  download_connect_timeout: 4.0      # socket connect timeout (seconds)
+  download_read_timeout: 8.0         # socket read timeout (seconds)
+  download_retry: 2                  # max retries per image download
+  head_precheck: false               # pre-check URLs with HEAD before GET
 
 # ---------------------------------------------------------------------------
 # OCR

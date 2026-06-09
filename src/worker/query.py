@@ -62,19 +62,41 @@ async def query_worker(pipeline: OrchestratorPipeline, idx: int) -> None:
                 async with pipeline._seen_urls_lock:
                     topic_seen = pipeline._seen_urls[seen_key]
 
+                bing_cfg = pipeline.cfg.get("bing", {})
+
                 urls, saved = await async_fetch_and_download(
                     query,
                     str(out_dir),
                     max_images=min(
-                        int(
-                            pipeline.cfg.get("bing", {}).get("per_subtopic_images", 500)
-                        ),
+                        int(bing_cfg.get("per_subtopic_images", 500)),
                         pipeline._limit_images_per_query or 10**9,
                     ),
-                    download_concurrency_initial=48,
-                    download_concurrency_max=64,
-                    per_host_limit=6,
-                    head_precheck=False,
+                    step=int(bing_cfg.get("step", 57)),
+                    max_concurrent_pages=int(bing_cfg.get("max_concurrent_pages", 3)),
+                    max_empty_pages=int(bing_cfg.get("max_empty_pages", 4)),
+                    per_page_timeout=float(bing_cfg.get("per_page_timeout", 12.0)),
+                    retry_per_page=int(bing_cfg.get("retry_per_page", 3)),
+                    max_warmup_retries=int(bing_cfg.get("max_warmup_retries", 2)),
+                    mkt=str(bing_cfg.get("mkt", "auto")),
+                    safesearch=str(bing_cfg.get("safesearch", "moderate")),
+                    download_concurrency_initial=int(
+                        bing_cfg.get("download_concurrency_initial", 24)
+                    ),
+                    download_concurrency_min=int(
+                        bing_cfg.get("download_concurrency_min", 8)
+                    ),
+                    download_concurrency_max=int(
+                        bing_cfg.get("download_concurrency_max", 48)
+                    ),
+                    per_host_limit=int(bing_cfg.get("per_host_limit", 4)),
+                    download_connect_timeout=float(
+                        bing_cfg.get("download_connect_timeout", 4.0)
+                    ),
+                    download_read_timeout=float(
+                        bing_cfg.get("download_read_timeout", 8.0)
+                    ),
+                    download_retry=int(bing_cfg.get("download_retry", 2)),
+                    head_precheck=bool(bing_cfg.get("head_precheck", False)),
                     debug=False,
                     already_seen=topic_seen,
                 )

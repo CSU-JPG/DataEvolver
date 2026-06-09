@@ -130,21 +130,14 @@ _CDN_HOSTS: Set[str] = {
     "pinimg.com",
     "media.tumblr.com",
     "staticflickr.com",
+    "ggpht.com",
+    "redd.it",
+    "imgur.com",
+    "deviantart.net",
+    "wikimedia.org",
 }
 
-_IRRELEVANT_DOMAINS: Set[str] = {
-    "yelp.com",
-    "tripadvisor.com",
-    "bakingo.com",
-    "ecayonline.com",
-    "zomato.com",
-    "opentable.com",
-    "grubhub.com",
-    "doordash.com",
-    "ubereats.com",
-    "foodpanda.com",
-    "swiggy.com",
-}
+_IRRELEVANT_DOMAINS: Set[str] = set()
 
 
 def _pick_ua() -> str:
@@ -192,9 +185,32 @@ def _clean_query(raw: str) -> str:
     return q.strip() or raw.strip()
 
 
+def _detect_mkt(query: str) -> str:
+    """Detect the Bing ``mkt`` (market) code from the query's Unicode content."""
+    if not query:
+        return "en-US"
+    if any('぀' <= c <= 'ゟ' or '゠' <= c <= 'ヿ' for c in query):
+        return "ja-JP"
+    if any('가' <= c <= '힯' or 'ᄀ' <= c <= 'ᇿ' for c in query):
+        return "ko-KR"
+    if any('Ѐ' <= c <= 'ӿ' for c in query):
+        return "ru-RU"
+    if any('؀' <= c <= 'ۿ' or 'ݐ' <= c <= 'ݿ' for c in query):
+        return "ar-SA"
+    if any('ऀ' <= c <= 'ॿ' for c in query):
+        return "hi-IN"
+    if any('฀' <= c <= '๿' for c in query):
+        return "th-TH"
+    if any('一' <= c <= '鿿' or '㐀' <= c <= '䶿' for c in query):
+        return "zh-CN"
+    return "en-US"
+
+
 async def _warmup_bing_session(
     session: aiohttp.ClientSession,
     keyword: str,
+    mkt: str = "en-US",
+    safesearch: str = "moderate",
     debug: bool = False,
 ) -> None:
     """Visit a chain of Bing pages to accumulate search cookies."""
@@ -228,7 +244,7 @@ async def _warmup_bing_session(
             (
                 f"https://www.bing.com/images/async?q={q_encoded}"
                 f"&first=0&count=1&relp=1&scenario=ImageBasicHover"
-                f"&ensearch=1&mkt=en-US&safesearch=off"
+                f"&ensearch=1&mkt={mkt}&safesearch={safesearch}"
             ),
             {
                 "User-Agent": ua,
@@ -408,11 +424,15 @@ async def async_fetch_image_urls(
     retry_per_page: int = 3,
     already_seen: Optional[Set[str]] = None,
     max_warmup_retries: int = 2,
+    mkt: str = "auto",
+    safesearch: str = "moderate",
 ) -> List[str]:
     """Sliding-window concurrent Bing image URL scraper."""
     keyword = _clean_query(keyword)
+    if mkt == "auto":
+        mkt = _detect_mkt(keyword)
     if debug:
-        print(f"[fetch] cleaned keyword='{keyword}'")
+        print(f"[fetch] cleaned keyword='{keyword}' mkt={mkt} safesearch={safesearch}")
 
     async def _do_fetch(sess: aiohttp.ClientSession) -> List[str]:
         """Internal fetch loop using a warm session."""
@@ -431,7 +451,7 @@ async def async_fetch_image_urls(
                 f"https://www.bing.com/images/async"
                 f"?q={q}&first={start}&count={step}&relp={step}"
                 f"&scenario=ImageBasicHover&ensearch=1"
-                f"&mkt=en-US&safesearch=off"
+                f"&mkt={mkt}&safesearch={safesearch}"
             )
             hdrs = {
                 "User-Agent": _pick_ua(),
@@ -649,7 +669,9 @@ async def async_fetch_image_urls(
             _session = session
 
         try:
-            await _warmup_bing_session(_session, keyword, debug=debug)
+            await _warmup_bing_session(
+                _session, keyword, mkt=mkt, safesearch=safesearch, debug=debug
+            )
             result = await _do_fetch(_session)
 
             if result:
@@ -957,7 +979,6 @@ async def async_download_urls(
                     ):
                         fail_reasons["OSError"] += 1
                         if attempt <= 2:
-                            # Stale keep-alive connection: worth one quick retry.
                             await asyncio.sleep(random.uniform(0.2, 0.8))
                         else:
                             url_ultimately_failed = True
@@ -1065,23 +1086,36 @@ async def async_fetch_and_download(
     step: int = _DEFAULT_STEP,
     max_concurrent_pages: int = 3,
     max_empty_pages: int = 4,
+    per_page_timeout: float = 12.0,
+    retry_per_page: int = 3,
+    max_warmup_retries: int = 2,
+    mkt: str = "auto",
+    safesearch: str = "moderate",
     download_concurrency_initial: int = 12,
     download_concurrency_min: int = 6,
     download_concurrency_max: int = 32,
     per_host_limit: int = 4,
+    download_connect_timeout: float = _DOWNLOAD_CONNECT_TIMEOUT,
+    download_read_timeout: float = _DOWNLOAD_READ_TIMEOUT,
+    download_retry: int = 2,
     head_precheck: bool = False,
     debug: bool = False,
     already_seen: Optional[Set[str]] = None,
 ) -> Tuple[List[str], List[str]]:
-    """Fetch image URLs and download them in one call."""
+    """Fetch image URLs from Bing and download them in one call."""
     urls = await async_fetch_image_urls(
         query,
         max_images=max_images,
         step=step,
+        per_page_timeout=per_page_timeout,
         max_concurrent_pages=max_concurrent_pages,
         max_empty_pages=max_empty_pages,
         debug=debug,
+        retry_per_page=retry_per_page,
         already_seen=already_seen,
+        max_warmup_retries=max_warmup_retries,
+        mkt=mkt,
+        safesearch=safesearch,
     )
     if debug:
         print(
@@ -1096,6 +1130,9 @@ async def async_fetch_and_download(
         concurrency_min=download_concurrency_min,
         concurrency_max=download_concurrency_max,
         per_host_limit=per_host_limit,
+        connect_timeout=download_connect_timeout,
+        read_timeout=download_read_timeout,
+        retry=download_retry,
         head_precheck=head_precheck,
         debug=debug,
     )
@@ -1172,6 +1209,9 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=12)
     parser.add_argument("--per_host", type=int, default=4)
     parser.add_argument("--pages", type=int, default=3)
+    parser.add_argument("--mkt", default="auto")
+    parser.add_argument("--safesearch", default="moderate",
+                        choices=["off", "moderate", "strict"])
     parser.add_argument("--head_precheck", action="store_true")
     parser.add_argument("--debug", action="store_true")
     a = parser.parse_args()
@@ -1185,6 +1225,8 @@ if __name__ == "__main__":
             max_images=a.max,
             step=a.step,
             max_concurrent_pages=a.pages,
+            mkt=a.mkt,
+            safesearch=a.safesearch,
             download_concurrency_initial=a.workers,
             download_concurrency_max=a.workers * 2,
             per_host_limit=a.per_host,

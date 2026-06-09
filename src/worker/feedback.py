@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 async def feedback_loop(pipeline: OrchestratorPipeline) -> None:
     """Listen for round-completion events and dynamically generate queries for unprocessed subtopics."""
     critic_strategy = (pipeline.cfg.get("critic", {}) or {}).get("strategy", {}) or {}
-    warmup_rounds = int(critic_strategy.get("warmup_rounds", 2) or 2)
+    warmup_rounds = int(critic_strategy.get("warmup_rounds", 3) or 3)
     fb_cfg = pipeline.cfg.get("feedback_query", {}) or {}
-    per_round_limit = int(fb_cfg.get("max_llm_calls_per_loop", 5) or 5)
+    per_round_limit = int(fb_cfg.get("max_llm_calls_per_loop", 3) or 3)
     dq_cfg = pipeline.cfg.get("dynamic_query", {}) or {}
 
     print(

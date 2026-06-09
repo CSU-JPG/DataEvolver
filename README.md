@@ -33,7 +33,7 @@
 ---
 
 <p align="center">
-  <img src="assets/overview.png" alt="DataEvolver overview" width="100%">
+  <img src="dataevolver-teaser.png" alt="DataEvolver overview" width="70%">
 </p>
 
 ## Overview
@@ -91,7 +91,7 @@ Round t+1:
 ```
 
 <p align="center">
-  <img src="assets/pipeline.png" alt="DataEvolver pipeline" width="100%">
+  <img src="dataevolver-pipeline.png" alt="DataEvolver pipeline" width="70%">
 </p>
 
 ## Highlights

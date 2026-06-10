@@ -98,6 +98,118 @@ class Critic:
         self.latest_strategy: Optional[Dict[str, Any]] = None
         self.completed_rounds: int = 0
 
+        gen_cfg = cfg.get("generation", {}) or {}
+        self.prompt_critic_enabled = bool(
+            gen_cfg.get("prompt_critic_enabled", False)
+        )
+        self.max_regeneration_rounds = max(
+            int(gen_cfg.get("max_regeneration_rounds", 1)), 1
+        )
+        self.prompt_critic_agent = self.agents.get("PromptCriticAgent")
+        self.prompt_critic_log_path: Optional[Path] = None
+
+    def init_prompt_critic_log(self, log_dir: Path) -> None:
+        """Initialize the PromptCritic log directory and JSONL file path."""
+        if not self.prompt_critic_enabled:
+            return
+        critic_log_dir = _ensure_dir(Path(log_dir) / "PromptCritic")
+        self.prompt_critic_log_path = critic_log_dir / "regeneration_log.jsonl"
+        print(
+            f"[Critic] PromptCritic log: {self.prompt_critic_log_path}"
+        )
+
+    def optimize_failed_prompts(
+        self, failures: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Analyze each failed image, optimize its prompt."""
+        if not self.prompt_critic_enabled or not self.prompt_critic_agent:
+            return []
+
+        optimized: List[Dict[str, Any]] = []
+        for f in failures:
+            topic = f.get("topic", "unknown")
+            sub = f.get("subtopic", "unknown")
+            original_prompt = f.get("prompt", "")
+            if not original_prompt:
+                continue
+
+            context = {
+                "original_prompt": original_prompt,
+                "topic": topic,
+                "subtopic": sub,
+                "failure_stage": f.get("failure_stage", "unknown"),
+                "failure_reasons": json.dumps(
+                    f.get("failure_reasons", []), ensure_ascii=False
+                ),
+                "quality_details": json.dumps(
+                    f.get("quality_details") or {}, ensure_ascii=False
+                ),
+                "semantic_details": json.dumps(
+                    f.get("semantic_details") or {}, ensure_ascii=False
+                ),
+                "text_details": json.dumps(
+                    f.get("text_details") or {}, ensure_ascii=False
+                ),
+            }
+
+            optimized_prompt: Optional[str] = None
+            try:
+                resp = self.prompt_critic_agent.run_template(context)
+                data = self._parse_json_object(resp)
+                if isinstance(data, dict) and isinstance(
+                    data.get("optimized_prompt"), str
+                ):
+                    optimized_prompt = data["optimized_prompt"].strip()
+                    if optimized_prompt:
+                        print(
+                            f"[Critic] Prompt optimized: "
+                            f"stage={f.get('failure_stage')} "
+                            f"reasons={f.get('failure_reasons')}"
+                        )
+            except Exception as exc:
+                print(f"[Critic] PromptCriticAgent failed: {exc}")
+
+            log_entry = {
+                "image_path": f.get("image_path", "unknown"),
+                "topic": topic,
+                "subtopic": sub,
+                "original_prompt": original_prompt,
+                "failure_stage": f.get("failure_stage"),
+                "failure_reasons": f.get("failure_reasons", []),
+                "quality_details": f.get("quality_details"),
+                "semantic_details": f.get("semantic_details"),
+                "text_details": f.get("text_details"),
+                "optimized_prompt": optimized_prompt,
+                "timestamp": time.time(),
+            }
+            if self.prompt_critic_log_path:
+                try:
+                    with open(
+                        self.prompt_critic_log_path, "a", encoding="utf-8"
+                    ) as lf:
+                        lf.write(
+                            json.dumps(log_entry, ensure_ascii=False) + "\n"
+                        )
+                except Exception as exc:
+                    print(f"[Critic] Failed to write prompt-critic log: {exc}")
+
+            if optimized_prompt:
+                optimized.append(
+                    {
+                        "topic": topic,
+                        "subtopic": sub,
+                        "prompt": optimized_prompt,
+                        "original_prompt": original_prompt,
+                        "failure_reasons": f.get("failure_reasons", []),
+                    }
+                )
+
+        print(
+            f"[Critic] optimize_failed_prompts: "
+            f"input={len(failures)} output={len(optimized)}"
+        )
+        return optimized
+
     def on_round(
         self,
         current_payload: Dict[str, Any],

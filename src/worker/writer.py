@@ -204,6 +204,21 @@ def save_generated(
             shutil.copy2(str(img_path), str(img_dst))
         except Exception as e:
             print(f"[GenCopyWarn] {e }")
+
+    if pipeline.dedup.enabled:
+        dedup_topic = (
+            "" if pipeline._dedup_scope == "global"
+            else item.get("topic", "")
+        )
+        try:
+            pipeline.dedup.commit_final_path(
+                final_path=str(img_dst),
+                topic=dedup_topic,
+                source_path=str(img_path),
+            )
+        except Exception as e:
+            print(f"[GenDedupCommitError] {img_dst.name} {e}")
+
     with open(json_dst, "w", encoding="utf-8") as f:
         json.dump(item, f, ensure_ascii=False, indent=2)
 

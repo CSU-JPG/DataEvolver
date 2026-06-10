@@ -236,6 +236,8 @@ class OrchestratorPipeline:
             except Exception as e:
                 print(f"[Critic] init error: {e }")
                 self.critic = None
+        if self.critic:
+            self.critic.init_prompt_critic_log(log_root)
         if rv_cfg.get("enabled", True):
             rv_dir = ensure_dir(log_root / "Rejection Vector")
             self.rejection_vector_tracker = None

@@ -257,6 +257,7 @@ def generate_qwen_images(
     prompts: List[str],
     config_path: str = "config.yaml",
     strict: bool = False,
+    cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Generate images using Qwen-Image for a (topic, subtopic) pair."""
     start_time = time.time()
@@ -275,7 +276,8 @@ def generate_qwen_images(
             "failures": [],
         }
 
-    cfg = _load_config(config_path)
+    if cfg is None:
+        cfg = _load_config(config_path)
     qcfg = cfg.get("qwen", {}) or {}
     gen_dir = _resolve_gen_dir(cfg)
 

@@ -38,7 +38,7 @@ generation:
 # ---------------------------------------------------------------------------
 llm:
   model: "mistral:latest"             # main LLM for Retriever / QueryGenerator / CountAnalyse / QueryPlannerAgent
-  cir_model: "qwen3.5:4b"             # critic LLM for PromptPlanner / SemanticAdvantageAgent / StrategyPlannerAgent / ExperienceLibrarianAgent
+  cir_model: "qwen3.5:4b"             # critic LLM for PromptPlanner / SemanticAdvantageAgent / ExperienceLibrarianAgent
 
 critic:
   enabled: true

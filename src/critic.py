@@ -72,7 +72,6 @@ class Critic:
             int(experience_cfg.get("topk", experience_cfg.get("top_k", 10) or 10)), 1
         )
         self.prompt_window = max(int(experience_cfg.get("prompt_window", 3) or 3), 1)
-        self.strategy_agent = self.agents.get("StrategyPlannerAgent")
         self.experience_fallback_mode: str = str(
             experience_cfg.get("fallback_mode", "merge") or "merge"
         ).lower()

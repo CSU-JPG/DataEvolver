@@ -110,6 +110,9 @@ class OrchestratorPipeline:
         self._filename_counter = 0
         self._filename_lock_sync = threading.Lock()
         self._init_filename_counter()
+        self._gen_filename_counter = 0
+        self._gen_filename_lock_sync = threading.Lock()
+        self._init_gen_filename_counter()
         self._image_index_path = self.accepted_root / "image_index.jsonl"
         self._image_index_error_path = self.accepted_root / "image_index_errors.log"
         for path_ in [self._image_index_path, self._image_index_error_path]:
@@ -811,11 +814,26 @@ class OrchestratorPipeline:
         self._filename_counter = sum(1 for f in images_dir.iterdir() if f.is_file())
         print(f"[Pipeline] Filename counter initialized: {self ._filename_counter }")
 
+    def _init_gen_filename_counter(self):
+        """Scan generated images directory to initialize the gen filename counter."""
+        root = pathlib.Path(self.gen_accepted_root)
+        if root.exists():
+            self._gen_filename_counter = sum(1 for _ in root.glob("gen_*.jpg"))
+        else:
+            self._gen_filename_counter = 0
+        print(f"[Pipeline] Gen filename counter initialized: {self ._gen_filename_counter }")
+
     def _next_filename_sync(self, ext: str) -> str:
         """Allocate the next sequential filename (thread-safe)."""
         with self._filename_lock_sync:
             self._filename_counter += 1
             return f"img_{self ._filename_counter :07d}{ext }"
+
+    def _next_gen_filename_sync(self, ext: str) -> str:
+        """Allocate the next sequential filename for generated images (thread-safe)."""
+        with self._gen_filename_lock_sync:
+            self._gen_filename_counter += 1
+            return f"gen_{self ._gen_filename_counter :07d}{ext }"
 
     def _alloc_filename(self, ext: str) -> Optional[str]:
         """Allocate a filename according to the configured strategy."""

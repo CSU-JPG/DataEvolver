@@ -192,13 +192,13 @@ def save_generated(
     pipeline: OrchestratorPipeline, item: Dict[str, Any], img_path: pathlib.Path
 ) -> None:
     """Save a generated image and its metadata to the gen_accepted directory."""
-    topic = (item.get("topic") or "NA").replace("/", "_")
-    sub = (item.get("subtopic") or "NA").replace("/", "_")
-    dst_dir = _ensure_dir(pipeline.gen_accepted_root / topic / sub)
-    sha1 = item.get("content_sha1") or "na"
+    dst_dir = pipeline.gen_accepted_root
     ext = img_path.suffix.lower() or ".jpg"
-    img_dst = dst_dir / f"{sha1 }{ext }"
-    json_dst = dst_dir / f"{sha1 }.json"
+    name = pipeline._next_gen_filename_sync(ext)
+    img_dst = dst_dir / name
+    cap_dst = dst_dir / f"{name .rsplit ('.',1 )[0 ]}.txt"
+    json_dst = dst_dir / f"{name .rsplit ('.',1 )[0 ]}.json"
+
     if not img_dst.exists():
         try:
             shutil.copy2(str(img_path), str(img_dst))
@@ -219,8 +219,29 @@ def save_generated(
         except Exception as e:
             print(f"[GenDedupCommitError] {img_dst.name} {e}")
 
-    with open(json_dst, "w", encoding="utf-8") as f:
-        json.dump(item, f, ensure_ascii=False, indent=2)
+    prompt_text = item.get("prompt") or item.get("caption") or ""
+    cap = sanitize_caption(prompt_text)
+    try:
+        cap_dst.write_text(cap, encoding="utf-8")
+    except Exception as e:
+        print(f"[GenCaptionWarn] {e }")
+
+    try:
+        meta = {
+            "filename": name,
+            "topic": item.get("topic"),
+            "subtopic": item.get("subtopic"),
+            "prompt": cap,
+            "content_sha1": item.get("content_sha1"),
+            "source": item.get("source"),
+            "is_generated": item.get("is_generated", True),
+            "timestamp": item.get("ts"),
+            "shard": item.get("shard"),
+        }
+        with open(json_dst, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[GenJSONWarn] {e }")
 
 
 def sanitize_caption(cap: Optional[str]) -> str:
@@ -286,13 +307,6 @@ def write_image_index_entry(
                 ferr.write(f"WriteFail: {e } | line={line [:200 ]}\n")
         print(f"[ImageIndexError] {e }")
         return False
-
-
-def _ensure_dir(p: pathlib.Path) -> pathlib.Path:
-    """Create directory if it doesn't exist and return the path."""
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
 
 def _next_filename_sync(pipeline: OrchestratorPipeline, ext: str) -> str:
     """Allocate the next sequential filename (thread-safe)."""

@@ -54,22 +54,22 @@ DataEvolver is organized as a closed-loop construction process with four coopera
     <tr>
       <td width="24%">🔍&nbsp;<b>Retriever</b></td>
       <td width="48%">Discovers candidate images with optimized search queries and updates query strategies using feedback from previous rounds.</td>
-      <td width="28%"><code>Mistral-7B</code></td>
+      <td width="28%"><code>llm.model</code> via Ollama, default <code>mistral:latest</code></td>
     </tr>
     <tr>
       <td width="24%">✅&nbsp;<b>Verifier</b></td>
-      <td width="48%">Filters candidates through OCR quality, duplicate detection, semantic relevance, and text consistency checks.</td>
-      <td width="28%"><code>PaddleOCR</code> + <code>CLIP</code> + <code>Sentence-Transformers</code></td>
+      <td width="48%">Filters candidates through OCR, image quality, watermark, deduplication, CLIP semantic relevance, and text-consistency checks.</td>
+      <td width="28%"><code>PaddleOCR</code>/<code>Tesseract</code> + <code>CLIP</code> + <code>Sentence-Transformers</code> + pHash</td>
     </tr>
     <tr>
       <td width="24%">📊&nbsp;<b>Critic</b></td>
       <td width="48%">Summarizes rejection patterns into semantic feedback, maintains an experience library, and revises construction policies.</td>
-      <td width="28%"><code>Qwen3.5-4B</code></td>
+      <td width="28%"><code>llm.cir_model</code> via Ollama, default <code>qwen3.5:4b</code></td>
     </tr>
     <tr>
       <td width="24%">🎨&nbsp;<b>Generator</b></td>
-      <td width="48%">Identifies under-represented categories and synthesizes text-aware images to improve topic coverage.</td>
-      <td width="28%"><code>Qwen3-VL</code></td>
+      <td width="48%">Uses CountAnalyse and PromptPlanner to identify coverage gaps, write prompts, synthesize text-aware images, and re-filter generated samples.</td>
+      <td width="28%"><code>mistral:latest</code> + <code>qwen3.5:4b</code> agents, <code>Qwen/Qwen-Image</code> T2I, optional <code>qwen3-vl:latest</code> annotation</td>
     </tr>
   </tbody>
 </table>
@@ -113,8 +113,8 @@ Ablation studies show that both the **Critic** and the **Generator** contribute 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/sgysy/dataevolver.git
-cd dataevolver
+git clone https://github.com/CSU-JPG/DataEvolver.git
+cd DataEvolver
 ```
 
 ### 2. Install dependencies
@@ -125,9 +125,21 @@ pip install -r requirements.txt
 
 ### 3. Run the pipeline
 
+For an existing environment, run the main entrypoint directly:
+
+```bash
+python main.py --config config.yaml --shard-id host-a --keep-rejects
+```
+
+`--shard-id` is required and should be unique for each concurrent machine or shard. Use `--keep-rejects` if you want rejected samples retained for diagnosis.
+
+For a full CUDA/Ollama bootstrap, use:
+
 ```bash
 bash run.sh
 ```
+
+The script creates a Python 3.9 Conda environment, installs CUDA-oriented dependencies, starts eight local Ollama servers on ports `11437`-`11444`, pulls the default Ollama models, and launches `main.py`.
 
 ## Configuration
 
@@ -154,11 +166,103 @@ paths:
 
 ```yaml
 llm:
-  model: "mistral:latest"          # Retriever / query planning / count analysis
-  cir_model: "qwen3.5:4b"          # Critic / semantic feedback / experience library
+  model: "mistral:latest"          # Retriever / QueryGenerator / QueryPlannerAgent / CountAnalyse
+  cir_model: "qwen3.5:4b"          # Critic agents / PromptPlanner / prompt rewriting
 ```
 
-All LLM backends are served through Ollama. You can replace them with other Ollama-compatible models according to your compute budget.
+All LLM agents are served through local Ollama instances. `src/agents/local_agents.py` round-robins requests over ports `11437`-`11444`.
+
+</details>
+
+<details>
+<summary><b>Pipeline Control</b> — crawl/generate phases and feedback loops</summary>
+
+```yaml
+dataset_num: 1000000
+
+generation:
+  enabled: true
+  max_regeneration_rounds: 3
+  prompt_critic_enabled: true
+
+critic:
+  enabled: true
+  strategy:
+    enabled: true
+    queries_enabled: true
+    warmup_rounds: 3
+  experience:
+    use_agent: true
+
+dynamic_query:
+  enabled: true
+  low_watermark: 30
+
+feedback_query:
+  enabled: true
+  min_samples: 20
+```
+
+The main run first performs asynchronous retrieval and filtering, then enters the optional generation phase when `generation.enabled` is true.
+
+</details>
+
+<details>
+<summary><b>Retrieval, OCR, and Filtering</b> — Bing, OCR, quality, semantic, and dedup checks</summary>
+
+```yaml
+bing:
+  per_subtopic_images: 1500
+  mkt: "auto"
+  safesearch: "moderate"
+
+ocr:
+  engine: "paddle"
+  lang: "ch"
+  use_multi_gpu: true
+  use_multiprocess: true
+
+quality:
+  min_ocr_coverage: 0.25
+  min_legibility: 0.5
+  min_side: 384
+  max_side: 4096
+
+semantic:
+  enabled: true
+  model_name: "openai/clip-vit-base-patch32"
+
+text_consistency:
+  enabled: true
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+
+hash_deduplication:
+  enabled: true
+  max_distance: 3
+  scope: "global"
+```
+
+The Verifier combines OCR-derived quality signals, watermark detection, pHash deduplication, CLIP similarity, and sentence-transformer text consistency before writing accepted samples.
+
+</details>
+
+<details>
+<summary><b>Generation and Annotation Models</b> — Qwen-Image and Qwen-VL</summary>
+
+```yaml
+qwen:
+  true_cfg_scale: 4.5
+  num_inference_steps: 25
+  seed: 42
+
+annotation:
+  qwen_vl:
+    enabled: true
+    model: "qwen3-vl:latest"
+    verbose: false
+```
+
+Image synthesis uses the Diffusers pipeline `Qwen/Qwen-Image` by default. Override it with the `QWEN_IMAGE_MODEL` environment variable if needed. The Qwen-VL setting is used for optional vision-language caption/annotation, not for text-to-image generation.
 
 </details>
 
@@ -188,9 +292,10 @@ Seed queries define the initial retrieval space. During construction, the Retrie
 1. Edit `paths` in `config.yaml`.
 2. Define target `topics` and seed queries.
 3. Choose Ollama-compatible LLM backends.
-4. Adjust OCR, semantic, duplicate, and quality thresholds.
-5. Enable or disable generation according to your experiment.
-6. Run `bash run.sh`.
+4. Start Ollama instances and make sure `mistral:latest`, `qwen3.5:4b`, and `qwen3-vl:latest` are available, or replace them in `config.yaml`.
+5. Adjust OCR, semantic, text-consistency, deduplication, and quality thresholds.
+6. Enable or disable generation with `generation.enabled`.
+7. Run `python main.py --config config.yaml --shard-id <unique-shard-id>`.
 
 ## Citation
 
@@ -207,4 +312,4 @@ If you find DataEvolver useful, please cite:
 
 ## Acknowledgments
 
-This project builds on several open-source tools, including PaddleOCR, Ollama, Hugging Face Diffusers, Qwen-Image, OpenCLIP, and Sentence-Transformers.
+This project builds on several open-source tools, including PaddleOCR, Tesseract OCR, Ollama, Hugging Face Diffusers, Qwen-Image, Qwen-VL, CLIP, and Sentence-Transformers.

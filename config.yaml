@@ -221,7 +221,7 @@ qwen:
   seed: 42
 
 # ---------------------------------------------------------------------------
-# Vision-language annotation (Qwen2.5-VL)
+# Vision-language annotation (Qwen-VL)
 # ---------------------------------------------------------------------------
 annotation:
   qwen_vl:

@@ -19,7 +19,7 @@ class VLMClient:
         qc = self.cfg.get("qwen_vl") or {}
         self.enabled = bool(qc.get("enabled", True))
         self.backend = str(qc.get("backend", "ollama")).lower()
-        self.model = qc.get("model", "qwen2.5-vl:latest")
+        self.model = qc.get("model", "qwen3-vl:latest")
         self.verbose = bool(qc.get("verbose", False))
         self.system = "You are a helpful vision-language assistant."
 
@@ -32,10 +32,10 @@ class VLMClient:
             self.available = False
 
     def _init_ollama_pool(self) -> None:
-        """Build a connection pool by probing Ollama instances on ports 11434–11441."""
+        """Build a connection pool by probing Ollama instances on ports 11437-11444."""
         import ollama
 
-        base_port = 11434
+        base_port = 11437
         num_instances = 8
 
         valid_clients = []

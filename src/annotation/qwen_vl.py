@@ -70,7 +70,7 @@ OCR result: {ocr_rec }
 Now, analyze the provided image and OCR results to generate a full text extraction summary for caption enhancement.
 """
 
-        ans = vl.generate_text_only(user, model_name="qwen3:8b")
+        ans = vl.generate(image_path, user)
         res = (ans or "").strip() or ""
         res = " ".join(res.split())
         print(f"[Qwen] KEY-TEXT res: {res }")

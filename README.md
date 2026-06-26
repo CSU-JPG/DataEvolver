@@ -1,10 +1,6 @@
 # DataEvolver: Self-Evolving Multi-Agent Data Construction for Text-Rich Image Generation
 
 <p align="center">
-  <b>Official implementation of DataEvolver</b>
-</p>
-
-<p align="center">
   <a href="https://sgysy.github.io/">Siyu Yan</a><sup>1,2,*</sup>&nbsp;&nbsp;
   <a href="#">Yizhen Gao</a><sup>1,*</sup>&nbsp;&nbsp;
   <a href="#">Yilin Wang</a><sup>1</sup>&nbsp;&nbsp;
